@@ -518,7 +518,7 @@ public final class OpenLoopJdbcBenchmark {
 
         BigDecimal unitPrice = priceForProduct(plan.productId());
         BigDecimal lineTotal = scaleCurrency(unitPrice.multiply(BigDecimal.valueOf(plan.quantity())));
-        Timestamp now = Timestamp.from(config.baseInstant());
+        Timestamp now = Timestamp.from(Instant.now());
 
         try (Connection connection = connectionProvider.getConnection()) {
             connection.setAutoCommit(false);
