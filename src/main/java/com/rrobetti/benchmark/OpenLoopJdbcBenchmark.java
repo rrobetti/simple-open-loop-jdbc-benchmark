@@ -88,11 +88,17 @@ public final class OpenLoopJdbcBenchmark {
                 : new HikariConnectionProvider(config)) {
             System.out.println("Pool warm-up started.");
             long warmupStart = System.nanoTime();
-            connectionProvider.warmUp();
+            ConcurrentHashMap<String, ErrorSummary> warmUpErrors = new ConcurrentHashMap<>();
+            try {
+                connectionProvider.warmUp();
+            } catch (SQLException exception) {
+                recordError(warmUpErrors, exception);
+            }
             System.out.printf("Pool warm-up finished in %s.%n", formatDuration(System.nanoTime() - warmupStart));
 
             System.out.println("Benchmark started.");
             BenchmarkRun run = executeBenchmark(config, connectionProvider, requestPlans);
+            mergeErrorSummaries(run.errors(), warmUpErrors);
             System.out.printf("Benchmark finished in %s.%n", formatDuration(run.benchmarkDurationNanos()));
             printSummary(config, run);
         }
@@ -805,6 +811,15 @@ public final class OpenLoopJdbcBenchmark {
         return message == null || message.isBlank() ? "<no message>" : message;
     }
 
+    static void mergeErrorSummaries(ConcurrentHashMap<String, ErrorSummary> target, ConcurrentHashMap<String, ErrorSummary> source) {
+        source.forEach((errorType, summary) ->
+                target.merge(errorType, summary, (existing, incoming) -> {
+                    existing.merge(incoming);
+                    return existing;
+                })
+        );
+    }
+
     static String buildOjpJdbcUrl(String ojpHost, int ojpPort, String dbHost, int dbPort, String dbName) {
         return "jdbc:ojp[%s:%d]_postgresql://%s:%d/%s".formatted(
                 ojpHost,
@@ -1203,6 +1218,11 @@ public final class OpenLoopJdbcBenchmark {
 
         String sampleMessage() {
             return sampleMessage.get();
+        }
+
+        void merge(ErrorSummary other) {
+            count.add(other.count());
+            sampleMessage.compareAndSet(null, other.sampleMessage());
         }
     }
 

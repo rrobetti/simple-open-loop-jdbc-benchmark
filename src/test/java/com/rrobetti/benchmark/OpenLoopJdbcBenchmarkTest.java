@@ -102,6 +102,25 @@ class OpenLoopJdbcBenchmarkTest {
     }
 
     @Test
+    void mergeErrorSummariesAddsCountsAndKeepsSampleMessage() {
+        ConcurrentHashMap<String, OpenLoopJdbcBenchmark.ErrorSummary> target = new ConcurrentHashMap<>();
+        ConcurrentHashMap<String, OpenLoopJdbcBenchmark.ErrorSummary> source = new ConcurrentHashMap<>();
+
+        OpenLoopJdbcBenchmark.incrementErrorCount(target, new SQLException("first message"));
+        OpenLoopJdbcBenchmark.incrementErrorCount(source, new SQLException("different message"));
+        OpenLoopJdbcBenchmark.incrementErrorCount(source, new IllegalStateException("boom"));
+
+        OpenLoopJdbcBenchmark.mergeErrorSummaries(target, source);
+
+        assertAll(
+                () -> assertEquals(2L, target.get("SQLException").count()),
+                () -> assertEquals("first message", target.get("SQLException").sampleMessage()),
+                () -> assertEquals(1L, target.get("IllegalStateException").count()),
+                () -> assertEquals("boom", target.get("IllegalStateException").sampleMessage())
+        );
+    }
+
+    @Test
     void ojpJdbcUrlUsesStandardPostgresTargetUrl() {
         assertEquals(
                 "jdbc:ojp[localhost:1059]_postgresql://localhost:5432/benchmark",
