@@ -98,9 +98,8 @@ public final class OpenLoopJdbcBenchmark {
 
             System.out.println("Benchmark started.");
             BenchmarkRun run = executeBenchmark(config, connectionProvider, requestPlans);
-            mergeErrorSummaries(run.errors(), warmUpErrors);
             System.out.printf("Benchmark finished in %s.%n", formatDuration(run.benchmarkDurationNanos()));
-            printSummary(config, run);
+            printSummary(config, run, warmUpErrors);
         }
     }
 
@@ -817,6 +816,10 @@ public final class OpenLoopJdbcBenchmark {
         );
     }
 
+    static long totalErrorCount(Map<String, ErrorSummary> errors) {
+        return errors.values().stream().mapToLong(ErrorSummary::count).sum();
+    }
+
     static void validateDeleteOutcome(int rowsDeleted) {
         // A missing row is treated as an idempotent no-op so repeated / reused datasets
         // do not inflate benchmark failures when the delete target is already gone.
@@ -848,13 +851,14 @@ public final class OpenLoopJdbcBenchmark {
         return submissionBaseNanos + (submissionIndex * interSubmissionWaitMillis * 1_000_000L);
     }
 
-    private static void printSummary(BenchmarkConfig config, BenchmarkRun run) {
+    private static void printSummary(BenchmarkConfig config, BenchmarkRun run, ConcurrentHashMap<String, ErrorSummary> warmUpErrors) {
         Summary summary = Summary.from(run);
 
         System.out.println();
         System.out.println("========== BENCHMARK SUMMARY ==========");
         System.out.printf("execution mode: %s%n", config.executionMode().displayName);
         System.out.printf("configured request count: %d%n", config.requestCount());
+        System.out.printf("warm-up exceptions: %d%n", totalErrorCount(warmUpErrors));
         System.out.printf("total requests attempted: %d%n", summary.totalAttempted());
         System.out.printf("total SQL statements actually executed: %d%n", run.sqlStatementCount());
         System.out.printf("total successful requests: %d%n", summary.successCount());
@@ -886,9 +890,21 @@ public final class OpenLoopJdbcBenchmark {
             );
         }
 
+        if (!warmUpErrors.isEmpty()) {
+            System.out.println();
+            System.out.println("Warm-up exception counts:");
+            warmUpErrors.entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .forEach(entry -> System.out.printf(
+                            "  %s -> %d (sample: %s)%n",
+                            entry.getKey(),
+                            entry.getValue().count(),
+                            entry.getValue().sampleMessage()
+                    ));
+        }
         if (!run.errors().isEmpty()) {
             System.out.println();
-            System.out.println("Exception counts:");
+            System.out.println("Request exception counts:");
             run.errors().entrySet().stream()
                     .sorted(Map.Entry.comparingByKey())
                     .forEach(entry -> System.out.printf(

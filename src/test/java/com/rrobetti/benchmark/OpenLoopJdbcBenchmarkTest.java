@@ -122,6 +122,17 @@ class OpenLoopJdbcBenchmarkTest {
     }
 
     @Test
+    void totalErrorCountSumsAllBuckets() {
+        ConcurrentHashMap<String, OpenLoopJdbcBenchmark.ErrorSummary> errors = new ConcurrentHashMap<>();
+
+        OpenLoopJdbcBenchmark.incrementErrorCount(errors, new SQLException("first"));
+        OpenLoopJdbcBenchmark.incrementErrorCount(errors, new SQLException("second"));
+        OpenLoopJdbcBenchmark.incrementErrorCount(errors, new IllegalStateException("boom"));
+
+        assertEquals(3L, OpenLoopJdbcBenchmark.totalErrorCount(errors));
+    }
+
+    @Test
     void ojpJdbcUrlUsesStandardPostgresTargetUrl() {
         assertEquals(
                 "jdbc:ojp[localhost:1059]_postgresql://localhost:5432/benchmark",
