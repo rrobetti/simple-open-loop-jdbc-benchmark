@@ -3,6 +3,7 @@ package com.rrobetti.benchmark;
 import org.junit.jupiter.api.Test;
 
 import java.util.EnumMap;
+import java.sql.SQLException;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -55,6 +56,18 @@ class OpenLoopJdbcBenchmarkTest {
                 () -> assertEquals(0, counts.get(OpenLoopJdbcBenchmark.RequestType.DELETE)),
                 () -> assertEquals(2, counts.get(OpenLoopJdbcBenchmark.RequestType.NORMAL_REPORT)),
                 () -> assertEquals(0, counts.get(OpenLoopJdbcBenchmark.RequestType.EXPENSIVE_REPORT))
+        );
+    }
+
+    @Test
+    void errorGroupingUsesOnlyExceptionType() {
+        assertAll(
+                () -> assertEquals("SQLException",
+                        OpenLoopJdbcBenchmark.errorTypeKey(new SQLException("first message"))),
+                () -> assertEquals("SQLException",
+                        OpenLoopJdbcBenchmark.errorTypeKey(new SQLException("different message"))),
+                () -> assertEquals("IllegalStateException",
+                        OpenLoopJdbcBenchmark.errorTypeKey(new IllegalStateException("boom")))
         );
     }
 }

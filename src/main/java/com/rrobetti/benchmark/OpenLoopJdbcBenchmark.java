@@ -728,12 +728,11 @@ public final class OpenLoopJdbcBenchmark {
     }
 
     private static void recordError(ConcurrentHashMap<String, LongAdder> errors, Exception exception) {
-        String message = exception.getMessage() == null ? "" : exception.getMessage().replaceAll("\\s+", " ").trim();
-        if (message.length() > 160) {
-            message = message.substring(0, 160);
-        }
-        String key = exception.getClass().getSimpleName() + (message.isBlank() ? "" : ": " + message);
-        errors.computeIfAbsent(key, ignored -> new LongAdder()).increment();
+        errors.computeIfAbsent(errorTypeKey(exception), ignored -> new LongAdder()).increment();
+    }
+
+    static String errorTypeKey(Exception exception) {
+        return exception.getClass().getSimpleName();
     }
 
     private static void printSummary(BenchmarkConfig config, BenchmarkRun run) {
@@ -776,7 +775,7 @@ public final class OpenLoopJdbcBenchmark {
 
         if (!run.errors().isEmpty()) {
             System.out.println();
-            System.out.println("Error summary:");
+            System.out.println("Exception counts:");
             run.errors().entrySet().stream()
                     .sorted(Map.Entry.comparingByKey())
                     .forEach(entry -> System.out.printf("  %s -> %d%n", entry.getKey(), entry.getValue().sum()));
