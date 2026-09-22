@@ -28,6 +28,25 @@ Self-contained Java 21 benchmark for comparing direct PostgreSQL access through 
 mvn clean package
 ```
 
+## How the benchmark works
+
+```mermaid
+flowchart TD
+    A[Start benchmark] --> B{benchmark.skipSeeding}
+    B -- false --> C[Drop and recreate open_loop_benchmark schema]
+    C --> D[Create tables and indexes]
+    D --> E[Seed customers, products, orders, order_items, activity_events]
+    B -- true --> F[Reuse existing populated open_loop_benchmark schema]
+    E --> G[Collect dataset maxima for request planning]
+    F --> G
+    G --> H[Build deterministic request plan]
+    H --> I[Warm connections]
+    I --> J[Release requests in open-loop schedule]
+    J --> K[Execute one SQL statement per request]
+    K --> L[Aggregate latencies, successes, failures, SQL count]
+    L --> M[Print benchmark summary]
+```
+
 ## Run PostgreSQL in Docker
 
 The benchmark expects PostgreSQL on `localhost:5432` by default. It will create and repopulate its own `open_loop_benchmark` schema, but the target database itself must already exist.
@@ -65,6 +84,7 @@ docker exec -it benchmark-postgres psql -U postgres -c "CREATE DATABASE benchmar
 This mode connects directly to PostgreSQL and warms a 100-connection Hikari pool before timing starts.
 
 The benchmark sets the Hikari connection acquisition timeout to 10 seconds.
+Use `-Dbenchmark.skipSeeding=true` if you want to reuse an already-populated `open_loop_benchmark` schema instead of recreating and reseeding it.
 
 ```bash
 export BENCHMARK_DB_PASSWORD=<db-password>
@@ -86,6 +106,7 @@ This mode uses the Open J Proxy JDBC driver directly with no client-side pool. I
 The benchmark also ships an `ojp.properties` file that asks OJP to keep its server-managed datasource pool at `minimumIdle=20` and `maximumPoolSize=20`. The idea is to simulate a microservice pattern where, for example, 5 application instances with a local max pool of 20 could otherwise open 100 direct database connections, while OJP can keep the real database connection count pinned to a smaller controlled target.
 
 The OJP path also sets the server-managed connection acquisition timeout to 10 seconds.
+The same `-Dbenchmark.skipSeeding=true` flag can be used here to reuse an existing populated benchmark schema.
 
 Request submissions are also paced by default with a `5 ms` gap between scheduled starts. You can override that with `-Dbenchmark.interSubmissionWaitMillis=...` (or `BENCHMARK_INTER_SUBMISSION_WAIT_MILLIS`) if you want a tighter or looser open-loop arrival pattern.
 
@@ -128,7 +149,8 @@ mvn \
 ## Notes
 
 - The benchmark recreates its schema and populates realistic seed data before each run.
-- The benchmark drops and recreates the `open_loop_benchmark` schema on every run, so use a dedicated PostgreSQL database and do not point it at shared data you need to keep.
+- Set `-Dbenchmark.skipSeeding=true` to skip schema recreation and data seeding; when you do, the benchmark expects an already-populated `open_loop_benchmark` schema and ignores the dataset sizing properties for setup.
+- Unless `benchmark.skipSeeding=true` is set, the benchmark drops and recreates the `open_loop_benchmark` schema on every run, so use a dedicated PostgreSQL database and do not point it at shared data you need to keep.
 - Setup and warm-up are excluded from measured benchmark time.
 - The workload mix is controlled by constants in `OpenLoopJdbcBenchmark`.
 - The `compile` phase is included in the run commands so they work from a clean checkout at the project root.

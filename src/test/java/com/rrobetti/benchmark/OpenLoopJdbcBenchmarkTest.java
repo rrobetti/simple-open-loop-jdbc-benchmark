@@ -4,14 +4,15 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.EnumMap;
 import java.sql.SQLException;
+import java.util.EnumMap;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OpenLoopJdbcBenchmarkTest {
@@ -138,5 +139,18 @@ class OpenLoopJdbcBenchmarkTest {
                 () -> assertEquals(baseNanos + 20_000_000L,
                         OpenLoopJdbcBenchmark.scheduledSubmissionTimeNanos(baseNanos, 5L, 4))
         );
+    }
+
+    @Test
+    void validateDatasetStatsRejectsMissingSeedData() {
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> OpenLoopJdbcBenchmark.validateDatasetStats(
+                        new OpenLoopJdbcBenchmark.DatasetStats(10, 10, 10, 10, 0),
+                        "seed data missing"
+                )
+        );
+
+        assertTrue(exception.getMessage().contains("seed data missing"));
     }
 }

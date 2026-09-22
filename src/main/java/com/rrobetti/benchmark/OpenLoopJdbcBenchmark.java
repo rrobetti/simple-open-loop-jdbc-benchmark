@@ -109,6 +109,7 @@ public final class OpenLoopJdbcBenchmark {
                   -Dbenchmark.useOjp=false|true
                   -Dbenchmark.requestCount=1000
                   -Dbenchmark.interSubmissionWaitMillis=5
+                  -Dbenchmark.skipSeeding=false|true
                   -Dbenchmark.db.host=localhost
                   -Dbenchmark.db.port=5432
                   -Dbenchmark.db.name=benchmark
@@ -132,6 +133,10 @@ public final class OpenLoopJdbcBenchmark {
 
     private static DatasetStats setupDatabase(BenchmarkConfig config) throws SQLException {
         try (Connection connection = DriverManager.getConnection(config.directJdbcUrl(), config.dbUser(), config.dbPassword())) {
+            if (config.skipSeeding()) {
+                System.out.println("Skipping schema recreation and seed data population; reusing existing benchmark data.");
+                return loadExistingDatasetStats(connection);
+            }
             connection.setAutoCommit(false);
             try {
                 recreateSchema(connection);
@@ -142,11 +147,66 @@ public final class OpenLoopJdbcBenchmark {
                 long itemCount = populateOrdersAndItems(connection, config);
                 populateEvents(connection, config);
                 connection.commit();
-                return new DatasetStats(config.orderCount(), itemCount, config.eventCount());
+                return new DatasetStats(
+                        config.customerCount(),
+                        config.productCount(),
+                        config.orderCount(),
+                        itemCount,
+                        config.eventCount()
+                );
             } catch (SQLException exception) {
                 connection.rollback();
                 throw exception;
             }
+        }
+    }
+
+    private static DatasetStats loadExistingDatasetStats(Connection connection) throws SQLException {
+        String sql = """
+                SELECT
+                    COALESCE((SELECT MAX(id) FROM %1$s.customers), 0),
+                    COALESCE((SELECT MAX(id) FROM %1$s.products), 0),
+                    COALESCE((SELECT MAX(id) FROM %1$s.orders), 0),
+                    COALESCE((SELECT MAX(id) FROM %1$s.order_items), 0),
+                    COALESCE((SELECT MAX(id) FROM %1$s.activity_events), 0)
+                """.formatted(SCHEMA_NAME);
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery(sql)) {
+            if (!resultSet.next()) {
+                throw new IllegalStateException("Unable to inspect existing benchmark dataset.");
+            }
+            DatasetStats datasetStats = new DatasetStats(
+                    resultSet.getLong(1),
+                    resultSet.getLong(2),
+                    resultSet.getLong(3),
+                    resultSet.getLong(4),
+                    resultSet.getLong(5)
+            );
+            validateDatasetStats(datasetStats, "benchmark.skipSeeding=true requires an existing populated " + SCHEMA_NAME + " schema.");
+            return datasetStats;
+        } catch (SQLException exception) {
+            throw new SQLException(
+                    "Failed to inspect existing benchmark schema. Ensure " + SCHEMA_NAME
+                            + " already exists with populated tables before using benchmark.skipSeeding=true.",
+                    exception
+            );
+        }
+    }
+
+    static void validateDatasetStats(DatasetStats datasetStats, String failurePrefix) {
+        if (datasetStats.maxCustomerId() <= 0 || datasetStats.maxProductId() <= 0
+                || datasetStats.maxOrderId() <= 0 || datasetStats.maxOrderItemId() <= 0
+                || datasetStats.maxEventId() <= 0) {
+            throw new IllegalArgumentException(
+                    failurePrefix + " Found maxima customers=%d, products=%d, orders=%d, order_items=%d, activity_events=%d."
+                            .formatted(
+                                    datasetStats.maxCustomerId(),
+                                    datasetStats.maxProductId(),
+                                    datasetStats.maxOrderId(),
+                                    datasetStats.maxOrderItemId(),
+                                    datasetStats.maxEventId()
+                            )
+            );
         }
     }
 
@@ -375,9 +435,9 @@ public final class OpenLoopJdbcBenchmark {
             for (int index = 0; index < count; index++) {
                 plans.add(new RequestPlan(
                         type,
-                        1 + random.nextInt(config.customerCount()),
-                        1 + random.nextInt(config.orderCount()),
-                        1 + random.nextInt(config.productCount()),
+                        1 + random.nextInt(Math.toIntExact(datasetStats.maxCustomerId())),
+                        1 + random.nextInt(Math.toIntExact(datasetStats.maxOrderId())),
+                        1 + random.nextInt(Math.toIntExact(datasetStats.maxProductId())),
                         nextDeleteEventId,
                         nextCreateOrderId,
                         nextCreateItemId,
@@ -963,6 +1023,7 @@ public final class OpenLoopJdbcBenchmark {
 
     private record BenchmarkConfig(
             boolean useOjp,
+            boolean skipSeeding,
             int requestCount,
             String dbHost,
             int dbPort,
@@ -980,6 +1041,7 @@ public final class OpenLoopJdbcBenchmark {
     ) {
         private static BenchmarkConfig fromEnvironment() {
             boolean useOjp = boolProperty("benchmark.useOjp", false);
+            boolean skipSeeding = boolProperty("benchmark.skipSeeding", false);
             int requestCount = intProperty("benchmark.requestCount", 1_000);
             long interSubmissionWaitMillis = longProperty("benchmark.interSubmissionWaitMillis", env("BENCHMARK_INTER_SUBMISSION_WAIT_MILLIS", "5"));
             int customerCount = intProperty("benchmark.dataset.customers", 5_000);
@@ -988,6 +1050,7 @@ public final class OpenLoopJdbcBenchmark {
             int eventCount = intProperty("benchmark.dataset.events", 50_000);
             BenchmarkConfig config = new BenchmarkConfig(
                     useOjp,
+                    skipSeeding,
                     requestCount,
                     stringProperty("benchmark.db.host", "BENCHMARK_DB_HOST", "localhost"),
                     intProperty("benchmark.db.port", env("BENCHMARK_DB_PORT", "5432")),
@@ -1085,7 +1148,7 @@ public final class OpenLoopJdbcBenchmark {
     private record Allocation(RequestType requestType, double exactCount) {
     }
 
-    private record DatasetStats(long maxOrderId, long maxOrderItemId, long maxEventId) {
+    record DatasetStats(long maxCustomerId, long maxProductId, long maxOrderId, long maxOrderItemId, long maxEventId) {
     }
 
     private record RequestPlan(
