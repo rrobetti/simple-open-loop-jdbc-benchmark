@@ -80,6 +80,26 @@ mvn \
 
 This mode uses the Open J Proxy JDBC driver directly with no client-side pool. It assumes the OJP server is available on `localhost:1059`.
 
+If you want to run OJP in Docker with slow query segregation enabled, the upstream OJP docs require mounting the JDBC driver jars into the container first:
+
+```bash
+mkdir -p ojp-libs
+curl -LO https://raw.githubusercontent.com/Open-J-Proxy/ojp/main/ojp-server/download-drivers.sh
+bash download-drivers.sh ojp-libs
+```
+
+Then start OJP with host networking and slow query segregation enabled:
+
+```bash
+docker run --rm --name benchmark-ojp \
+  --network host \
+  -e OJP_SERVER_SLOWQUERYSEGREGATION_ENABLED=true \
+  -v "$(pwd)/ojp-libs:/opt/ojp/ojp-libs" \
+  rrobetti/ojp:1.0.0
+```
+
+`--network host` is the simplest option when your PostgreSQL instance is already running on `localhost:5432`. If you use a different Docker networking setup, point the benchmark and OJP at a hostname the container can resolve instead of `localhost`.
+
 ```bash
 export BENCHMARK_DB_PASSWORD=<db-password>
 mvn \
