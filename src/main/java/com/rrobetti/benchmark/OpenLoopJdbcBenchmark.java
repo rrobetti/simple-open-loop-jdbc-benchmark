@@ -75,10 +75,10 @@ public final class OpenLoopJdbcBenchmark {
 
         System.out.println("Database setup started.");
         long setupStart = System.nanoTime();
-        setupDatabase(config);
+        DatasetStats datasetStats = setupDatabase(config);
         System.out.printf("Database setup finished in %s.%n", formatDuration(System.nanoTime() - setupStart));
 
-        List<RequestPlan> requestPlans = buildRequestPlans(config);
+        List<RequestPlan> requestPlans = buildRequestPlans(config, datasetStats);
 
         try (ConnectionProvider connectionProvider = config.useOjp()
                 ? new OjpConnectionProvider(config)
@@ -127,7 +127,7 @@ public final class OpenLoopJdbcBenchmark {
         }
     }
 
-    private static void setupDatabase(BenchmarkConfig config) throws SQLException {
+    private static DatasetStats setupDatabase(BenchmarkConfig config) throws SQLException {
         try (Connection connection = DriverManager.getConnection(config.directJdbcUrl(), config.dbUser(), config.dbPassword())) {
             connection.setAutoCommit(false);
             try {
@@ -136,9 +136,10 @@ public final class OpenLoopJdbcBenchmark {
                 createIndexes(connection);
                 populateCustomers(connection, config);
                 populateProducts(connection, config);
-                populateOrdersAndItems(connection, config);
+                long itemCount = populateOrdersAndItems(connection, config);
                 populateEvents(connection, config);
                 connection.commit();
+                return new DatasetStats(config.orderCount(), itemCount, config.eventCount());
             } catch (SQLException exception) {
                 connection.rollback();
                 throw exception;
@@ -263,7 +264,7 @@ public final class OpenLoopJdbcBenchmark {
         }
     }
 
-    private static void populateOrdersAndItems(Connection connection, BenchmarkConfig config) throws SQLException {
+    private static long populateOrdersAndItems(Connection connection, BenchmarkConfig config) throws SQLException {
         Random random = new Random(DATASET_RANDOM_SEED * 5);
         String orderSql = """
                 INSERT INTO %s.orders (id, customer_id, order_status, ordered_at, total_amount)
@@ -317,6 +318,7 @@ public final class OpenLoopJdbcBenchmark {
 
             orderStatement.executeBatch();
             itemStatement.executeBatch();
+            return itemId - 1;
         }
     }
 
@@ -348,13 +350,13 @@ public final class OpenLoopJdbcBenchmark {
         }
     }
 
-    private static List<RequestPlan> buildRequestPlans(BenchmarkConfig config) {
+    private static List<RequestPlan> buildRequestPlans(BenchmarkConfig config, DatasetStats datasetStats) {
         EnumMap<RequestType, Integer> counts = calculateRequestCounts(config.requestCount());
         List<RequestPlan> plans = new ArrayList<>(config.requestCount());
         Random random = new Random(WORKLOAD_RANDOM_SEED);
-        long nextCreateOrderId = config.orderCount() + 1L;
-        long nextCreateItemId = (config.orderCount() * 5L) + 1L;
-        long nextCreateEventId = config.eventCount() + 1L;
+        long nextCreateOrderId = datasetStats.maxOrderId() + 1L;
+        long nextCreateItemId = datasetStats.maxOrderItemId() + 1L;
+        long nextCreateEventId = datasetStats.maxEventId() + 1L;
         long nextDeleteEventId = 1L;
 
         for (RequestType type : RequestType.values()) {
@@ -1006,6 +1008,9 @@ public final class OpenLoopJdbcBenchmark {
     }
 
     private record Allocation(RequestType requestType, double exactCount) {
+    }
+
+    private record DatasetStats(long maxOrderId, long maxOrderItemId, long maxEventId) {
     }
 
     private record RequestPlan(

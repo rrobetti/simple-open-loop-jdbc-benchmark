@@ -34,13 +34,14 @@ This mode connects directly to PostgreSQL and warms a 100-connection Hikari pool
 
 ```bash
 export BENCHMARK_DB_PASSWORD=<db-password>
-mvn exec:java \
+mvn \
   -Dbenchmark.useOjp=false \
   -Dbenchmark.requestCount=1000 \
   -Dbenchmark.db.host=localhost \
   -Dbenchmark.db.port=5432 \
   -Dbenchmark.db.name=benchmark \
-  -Dbenchmark.db.user=postgres
+  -Dbenchmark.db.user=postgres \
+  exec:java
 ```
 
 ## Run OJP mode
@@ -49,7 +50,7 @@ This mode uses the Open J Proxy JDBC driver directly with no client-side pool. I
 
 ```bash
 export BENCHMARK_DB_PASSWORD=<db-password>
-mvn exec:java \
+mvn \
   -Dbenchmark.useOjp=true \
   -Dbenchmark.requestCount=1000 \
   -Dbenchmark.db.host=localhost \
@@ -57,7 +58,8 @@ mvn exec:java \
   -Dbenchmark.db.name=benchmark \
   -Dbenchmark.db.user=postgres \
   -Dbenchmark.ojp.host=localhost \
-  -Dbenchmark.ojp.port=1059
+  -Dbenchmark.ojp.port=1059 \
+  exec:java
 ```
 
 ## Notes
