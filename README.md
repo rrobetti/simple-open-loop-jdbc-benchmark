@@ -98,6 +98,7 @@ Then start OJP with host networking and slow query segregation enabled:
 ```bash
 docker run --rm --name benchmark-ojp \
   --network host \
+  -e OJP_SERVER_LOGLEVEL=ERROR \
   -e OJP_SERVER_SLOWQUERYSEGREGATION_ENABLED=true \
   -v "$(pwd)/ojp-libs:/opt/ojp/ojp-libs" \
   rrobetti/ojp:1.0.0
