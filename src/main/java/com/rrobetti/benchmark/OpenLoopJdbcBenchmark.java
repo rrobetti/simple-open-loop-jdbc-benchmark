@@ -766,6 +766,7 @@ public final class OpenLoopJdbcBenchmark {
                 inserted_event AS (
                     INSERT INTO %s.activity_events (id, customer_id, event_type, event_time, details)
                     VALUES (?, ?, ?, ?, ?)
+                    RETURNING id
                 )
                 SELECT 1
                 FROM inserted_event
