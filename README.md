@@ -8,7 +8,7 @@ Self-contained Java 21 benchmark for comparing direct PostgreSQL access through 
 <dependency>
     <groupId>org.postgresql</groupId>
     <artifactId>postgresql</artifactId>
-    <version>42.7.7</version>
+    <version>42.7.12</version>
 </dependency>
 <dependency>
     <groupId>com.zaxxer</groupId>
