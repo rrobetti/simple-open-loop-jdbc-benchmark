@@ -109,7 +109,20 @@ class OpenLoopJdbcBenchmarkTest {
 
         assertAll(
                 () -> assertEquals("20", properties.getProperty("ojp.connection.pool.maximumPoolSize")),
-                () -> assertEquals("20", properties.getProperty("ojp.connection.pool.minimumIdle"))
+                () -> assertEquals("20", properties.getProperty("ojp.connection.pool.minimumIdle")),
+                () -> assertEquals("10000", properties.getProperty("ojp.connection.pool.connectionTimeout"))
+        );
+    }
+
+    @Test
+    void createRequestsUseOneSqlStatement() {
+        String sql = OpenLoopJdbcBenchmark.createRequestSql();
+
+        assertAll(
+                () -> assertTrue(sql.startsWith("WITH inserted_order AS")),
+                () -> assertEquals(3, sql.split("INSERT INTO", -1).length - 1),
+                () -> assertTrue(sql.contains("SELECT 1")),
+                () -> assertTrue(sql.contains("FROM inserted_event"))
         );
     }
 

@@ -39,6 +39,7 @@ public final class OpenLoopJdbcBenchmark {
     private static final long DATASET_RANDOM_SEED = 7_331L;
     private static final long WORKLOAD_RANDOM_SEED = 91_177L;
     private static final int HIKARI_POOL_SIZE = 100;
+    private static final long CONNECTION_ACQUISITION_TIMEOUT_MS = 10_000L;
 
     // Request distribution (easy to change in one place).
     private static final int READ_PERCENT = 40;
@@ -509,58 +510,29 @@ public final class OpenLoopJdbcBenchmark {
     }
 
     private static void executeCreateRequest(BenchmarkConfig config, ConnectionProvider connectionProvider, RequestPlan plan, LongAdder sqlStatementCount) throws SQLException {
-        String orderSql = """
-                INSERT INTO %s.orders (id, customer_id, order_status, ordered_at, total_amount)
-                VALUES (?, ?, ?, ?, ?)
-                """.formatted(SCHEMA_NAME);
-        String itemSql = """
-                INSERT INTO %s.order_items (id, order_id, product_id, quantity, unit_price, line_total)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """.formatted(SCHEMA_NAME);
-        String eventSql = """
-                INSERT INTO %s.activity_events (id, customer_id, event_type, event_time, details)
-                VALUES (?, ?, ?, ?, ?)
-                """.formatted(SCHEMA_NAME);
-
+        String sql = createRequestSql();
         BigDecimal unitPrice = priceForProduct(plan.productId());
         BigDecimal lineTotal = scaleCurrency(unitPrice.multiply(BigDecimal.valueOf(plan.quantity())));
         Timestamp now = Timestamp.from(Instant.now());
 
-        try (Connection connection = connectionProvider.getConnection()) {
-            connection.setAutoCommit(false);
-            try (PreparedStatement orderStatement = connection.prepareStatement(orderSql);
-                 PreparedStatement itemStatement = connection.prepareStatement(itemSql);
-                 PreparedStatement eventStatement = connection.prepareStatement(eventSql)) {
-
-                orderStatement.setLong(1, plan.createOrderId());
-                orderStatement.setLong(2, plan.customerId());
-                orderStatement.setString(3, "NEW");
-                orderStatement.setTimestamp(4, now);
-                orderStatement.setBigDecimal(5, lineTotal);
-                executeUpdate(orderStatement, sqlStatementCount);
-
-                itemStatement.setLong(1, plan.createItemId());
-                itemStatement.setLong(2, plan.createOrderId());
-                itemStatement.setLong(3, plan.productId());
-                itemStatement.setInt(4, plan.quantity());
-                itemStatement.setBigDecimal(5, unitPrice);
-                itemStatement.setBigDecimal(6, lineTotal);
-                executeUpdate(itemStatement, sqlStatementCount);
-
-                eventStatement.setLong(1, plan.createEventId());
-                eventStatement.setLong(2, plan.customerId());
-                eventStatement.setString(3, "CHECKOUT");
-                eventStatement.setTimestamp(4, now);
-                eventStatement.setString(5, "Synthetic order " + plan.createOrderId());
-                executeUpdate(eventStatement, sqlStatementCount);
-
-                connection.commit();
-            } catch (SQLException exception) {
-                connection.rollback();
-                throw exception;
-            } finally {
-                connection.setAutoCommit(true);
-            }
+        try (Connection connection = connectionProvider.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, plan.createOrderId());
+            statement.setLong(2, plan.customerId());
+            statement.setString(3, "NEW");
+            statement.setTimestamp(4, now);
+            statement.setBigDecimal(5, lineTotal);
+            statement.setLong(6, plan.createItemId());
+            statement.setLong(7, plan.productId());
+            statement.setInt(8, plan.quantity());
+            statement.setBigDecimal(9, unitPrice);
+            statement.setBigDecimal(10, lineTotal);
+            statement.setLong(11, plan.createEventId());
+            statement.setLong(12, plan.customerId());
+            statement.setString(13, "CHECKOUT");
+            statement.setTimestamp(14, now);
+            statement.setString(15, "Synthetic order " + plan.createOrderId());
+            consumeQuery(statement, sqlStatementCount);
         }
     }
 
@@ -717,6 +689,27 @@ public final class OpenLoopJdbcBenchmark {
                     LIMIT 200
                     """.formatted(SCHEMA_NAME, SCHEMA_NAME, SCHEMA_NAME);
         };
+    }
+
+    static String createRequestSql() {
+        return """
+                WITH inserted_order AS (
+                    INSERT INTO %s.orders (id, customer_id, order_status, ordered_at, total_amount)
+                    VALUES (?, ?, ?, ?, ?)
+                    RETURNING id
+                ),
+                inserted_item AS (
+                    INSERT INTO %s.order_items (id, order_id, product_id, quantity, unit_price, line_total)
+                    SELECT ?, inserted_order.id, ?, ?, ?, ?
+                    FROM inserted_order
+                ),
+                inserted_event AS (
+                    INSERT INTO %s.activity_events (id, customer_id, event_type, event_time, details)
+                    VALUES (?, ?, ?, ?, ?)
+                )
+                SELECT 1
+                FROM inserted_event
+                """.formatted(SCHEMA_NAME, SCHEMA_NAME, SCHEMA_NAME);
     }
 
     private static void consumeQuery(PreparedStatement statement, LongAdder sqlStatementCount) throws SQLException {
@@ -899,7 +892,7 @@ public final class OpenLoopJdbcBenchmark {
             hikariConfig.setMinimumIdle(HIKARI_POOL_SIZE);
             hikariConfig.setMaximumPoolSize(HIKARI_POOL_SIZE);
             hikariConfig.setInitializationFailTimeout(-1);
-            hikariConfig.setConnectionTimeout(30_000);
+            hikariConfig.setConnectionTimeout(CONNECTION_ACQUISITION_TIMEOUT_MS);
             hikariConfig.setPoolName("benchmark-hikari");
             this.dataSource = new HikariDataSource(hikariConfig);
         }
@@ -950,6 +943,7 @@ public final class OpenLoopJdbcBenchmark {
             Properties properties = new Properties();
             properties.setProperty("user", config.dbUser());
             properties.setProperty("password", config.dbPassword());
+            properties.setProperty("ojp.connection.pool.connectionTimeout", Long.toString(CONNECTION_ACQUISITION_TIMEOUT_MS));
             return DriverManager.getConnection(config.ojpJdbcUrl(), properties);
         }
 

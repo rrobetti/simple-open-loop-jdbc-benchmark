@@ -64,6 +64,8 @@ docker exec -it benchmark-postgres psql -U postgres -c "CREATE DATABASE benchmar
 
 This mode connects directly to PostgreSQL and warms a 100-connection Hikari pool before timing starts.
 
+The benchmark sets the Hikari connection acquisition timeout to 10 seconds.
+
 ```bash
 export BENCHMARK_DB_PASSWORD=<db-password>
 mvn \
@@ -82,6 +84,8 @@ mvn \
 This mode uses the Open J Proxy JDBC driver directly with no client-side pool. It assumes the OJP server is available on `localhost:1059`.
 
 The benchmark also ships an `ojp.properties` file that asks OJP to keep its server-managed datasource pool at `minimumIdle=20` and `maximumPoolSize=20`. The idea is to simulate a microservice pattern where, for example, 5 application instances with a local max pool of 20 could otherwise open 100 direct database connections, while OJP can keep the real database connection count pinned to a smaller controlled target.
+
+The OJP path also sets the server-managed connection acquisition timeout to 10 seconds.
 
 Request submissions are also paced by default with a `5 ms` gap between scheduled starts. You can override that with `-Dbenchmark.interSubmissionWaitMillis=...` (or `BENCHMARK_INTER_SUBMISSION_WAIT_MILLIS`) if you want a tighter or looser open-loop arrival pattern.
 
