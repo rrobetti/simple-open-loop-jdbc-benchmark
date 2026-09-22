@@ -87,4 +87,12 @@ class OpenLoopJdbcBenchmarkTest {
                 () -> assertEquals(1L, errors.get("IllegalStateException").sum())
         );
     }
+
+    @Test
+    void ojpJdbcUrlUsesStandardPostgresTargetUrl() {
+        assertEquals(
+                "jdbc:ojp[localhost:1059]_postgresql://localhost:5432/benchmark",
+                OpenLoopJdbcBenchmark.buildOjpJdbcUrl("localhost", 1059, "localhost", 5432, "benchmark")
+        );
+    }
 }

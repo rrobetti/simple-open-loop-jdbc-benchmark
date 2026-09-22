@@ -739,6 +739,16 @@ public final class OpenLoopJdbcBenchmark {
         errors.computeIfAbsent(errorTypeKey(exception), ignored -> new LongAdder()).increment();
     }
 
+    static String buildOjpJdbcUrl(String ojpHost, int ojpPort, String dbHost, int dbPort, String dbName) {
+        return "jdbc:ojp[%s:%d]_postgresql://%s:%d/%s".formatted(
+                ojpHost,
+                ojpPort,
+                dbHost,
+                dbPort,
+                dbName
+        );
+    }
+
     private static void printSummary(BenchmarkConfig config, BenchmarkRun run) {
         Summary summary = Summary.from(run);
 
@@ -991,14 +1001,7 @@ public final class OpenLoopJdbcBenchmark {
         }
 
         private String ojpJdbcUrl() {
-            return "jdbc:ojp[%s:%d]_postgresql://%s@%s:%d/%s".formatted(
-                    ojpHost,
-                    ojpPort,
-                    dbUser,
-                    dbHost,
-                    dbPort,
-                    dbName
-            );
+            return buildOjpJdbcUrl(ojpHost, ojpPort, dbHost, dbPort, dbName);
         }
 
         private static boolean boolProperty(String systemProperty, boolean defaultValue) {
