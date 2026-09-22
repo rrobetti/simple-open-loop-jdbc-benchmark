@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.EnumMap;
 import java.sql.SQLException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.LongAdder;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -68,6 +70,21 @@ class OpenLoopJdbcBenchmarkTest {
                         OpenLoopJdbcBenchmark.errorTypeKey(new SQLException("different message"))),
                 () -> assertEquals("IllegalStateException",
                         OpenLoopJdbcBenchmark.errorTypeKey(new IllegalStateException("boom")))
+        );
+    }
+
+    @Test
+    void errorCountsAggregateByExceptionTypeNotMessage() {
+        ConcurrentHashMap<String, LongAdder> errors = new ConcurrentHashMap<>();
+
+        OpenLoopJdbcBenchmark.incrementErrorCount(errors, new SQLException("first message"));
+        OpenLoopJdbcBenchmark.incrementErrorCount(errors, new SQLException("different message"));
+        OpenLoopJdbcBenchmark.incrementErrorCount(errors, new IllegalStateException("boom"));
+
+        assertAll(
+                () -> assertEquals(2, errors.size()),
+                () -> assertEquals(2L, errors.get("SQLException").sum()),
+                () -> assertEquals(1L, errors.get("IllegalStateException").sum())
         );
     }
 }

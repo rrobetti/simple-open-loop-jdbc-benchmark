@@ -728,11 +728,15 @@ public final class OpenLoopJdbcBenchmark {
     }
 
     private static void recordError(ConcurrentHashMap<String, LongAdder> errors, Exception exception) {
-        errors.computeIfAbsent(errorTypeKey(exception), ignored -> new LongAdder()).increment();
+        incrementErrorCount(errors, exception);
     }
 
     static String errorTypeKey(Exception exception) {
         return exception.getClass().getSimpleName();
+    }
+
+    static void incrementErrorCount(ConcurrentHashMap<String, LongAdder> errors, Exception exception) {
+        errors.computeIfAbsent(errorTypeKey(exception), ignored -> new LongAdder()).increment();
     }
 
     private static void printSummary(BenchmarkConfig config, BenchmarkRun run) {
