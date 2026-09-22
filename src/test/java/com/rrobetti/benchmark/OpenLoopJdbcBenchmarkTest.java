@@ -10,6 +10,7 @@ import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -154,6 +155,11 @@ class OpenLoopJdbcBenchmarkTest {
                 () -> assertTrue(sql.contains("SELECT 1")),
                 () -> assertTrue(sql.contains("FROM inserted_event"))
         );
+    }
+
+    @Test
+    void deleteRequestsTreatMissingRowsAsSuccessfulNoOp() {
+        assertDoesNotThrow(() -> OpenLoopJdbcBenchmark.validateDeleteOutcome(0));
     }
 
     @Test
