@@ -28,6 +28,38 @@ Self-contained Java 21 benchmark for comparing direct PostgreSQL access through 
 mvn clean package
 ```
 
+## Run PostgreSQL in Docker
+
+The benchmark expects PostgreSQL on `localhost:5432` by default. It will create and repopulate its own `open_loop_benchmark` schema, but the target database itself must already exist.
+
+The simplest local setup is to let the container create the benchmark database for you:
+
+```bash
+docker run --name benchmark-postgres \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=benchmark \
+  -p 5432:5432 \
+  -d postgres:17
+```
+
+Wait for PostgreSQL to become ready:
+
+```bash
+docker logs -f benchmark-postgres
+```
+
+If you already have a PostgreSQL container or instance running, either:
+
+- create a database named `benchmark`, or
+- point the benchmark at a different existing database with `-Dbenchmark.db.name=...`
+
+Example manual database creation for an existing container:
+
+```bash
+docker exec -it benchmark-postgres psql -U postgres -c "CREATE DATABASE benchmark;"
+```
+
 ## Run Hikari mode
 
 This mode connects directly to PostgreSQL and warms a 100-connection Hikari pool before timing starts.
