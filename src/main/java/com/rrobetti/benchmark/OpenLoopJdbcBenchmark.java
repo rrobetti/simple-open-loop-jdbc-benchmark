@@ -100,7 +100,7 @@ public final class OpenLoopJdbcBenchmark {
                 OpenLoopJdbcBenchmark
 
                 Run with Maven:
-                  mvn exec:java -Dexec.args=--help
+                  mvn -Dexec.args=--help compile exec:java
 
                 Important system properties:
                   export BENCHMARK_DB_PASSWORD=<db-password>

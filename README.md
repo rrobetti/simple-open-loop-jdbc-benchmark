@@ -73,7 +73,7 @@ mvn \
   -Dbenchmark.db.port=5432 \
   -Dbenchmark.db.name=benchmark \
   -Dbenchmark.db.user=postgres \
-  exec:java
+  compile exec:java
 ```
 
 ## Run OJP mode
@@ -91,7 +91,7 @@ mvn \
   -Dbenchmark.db.user=postgres \
   -Dbenchmark.ojp.host=localhost \
   -Dbenchmark.ojp.port=1059 \
-  exec:java
+  compile exec:java
 ```
 
 ## Notes
@@ -100,4 +100,5 @@ mvn \
 - The benchmark drops and recreates the `open_loop_benchmark` schema on every run, so use a dedicated PostgreSQL database and do not point it at shared data you need to keep.
 - Setup and warm-up are excluded from measured benchmark time.
 - The workload mix is controlled by constants in `OpenLoopJdbcBenchmark`.
-- Run `mvn exec:java -Dexec.args=--help` to print available system properties.
+- The `compile` phase is included in the run commands so they work from a clean checkout at the project root.
+- Run `mvn -Dexec.args=--help compile exec:java` to print available system properties.
