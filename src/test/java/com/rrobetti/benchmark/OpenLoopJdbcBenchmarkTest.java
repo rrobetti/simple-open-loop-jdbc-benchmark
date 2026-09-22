@@ -2,8 +2,11 @@ package com.rrobetti.benchmark;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.EnumMap;
 import java.sql.SQLException;
+import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 
@@ -94,5 +97,16 @@ class OpenLoopJdbcBenchmarkTest {
                 "jdbc:ojp[localhost:1059]_postgresql://localhost:5432/benchmark",
                 OpenLoopJdbcBenchmark.buildOjpJdbcUrl("localhost", 1059, "localhost", 5432, "benchmark")
         );
+    }
+
+    @Test
+    void ojpClientPoolingIsDisabledForBenchmarkFairness() throws IOException {
+        Properties properties = new Properties();
+        try (InputStream inputStream = getClass().getClassLoader().getResourceAsStream("ojp.properties")) {
+            assertTrue(inputStream != null, "ojp.properties should be packaged on the classpath");
+            properties.load(inputStream);
+        }
+
+        assertEquals("false", properties.getProperty("ojp.connection.pool.enabled"));
     }
 }

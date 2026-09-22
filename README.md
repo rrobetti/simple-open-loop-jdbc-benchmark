@@ -78,7 +78,7 @@ mvn \
 
 ## Run OJP mode
 
-This mode uses the Open J Proxy JDBC driver directly with no client-side pool. It assumes the OJP server is available on `localhost:1059`.
+This mode uses the Open J Proxy JDBC driver directly with no client-side pool. The project ships an `ojp.properties` file with `ojp.connection.pool.enabled=false` so the comparison stays OJP-only on the client side. It assumes the OJP server is available on `localhost:1059`.
 
 If you want to run OJP in Docker with slow query segregation enabled, the upstream OJP docs require mounting the JDBC driver jars into the container first:
 
