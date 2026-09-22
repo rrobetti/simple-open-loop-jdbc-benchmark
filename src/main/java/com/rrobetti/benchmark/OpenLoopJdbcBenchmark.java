@@ -35,7 +35,6 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class OpenLoopJdbcBenchmark {
 
     private static final String SCHEMA_NAME = "open_loop_benchmark";
-    private static final Instant BASE_INSTANT = Instant.now();
     private static final long DATASET_RANDOM_SEED = 7_331L;
     private static final long WORKLOAD_RANDOM_SEED = 91_177L;
     private static final int HIKARI_POOL_SIZE = 100;
@@ -90,7 +89,7 @@ public final class OpenLoopJdbcBenchmark {
             System.out.printf("Pool warm-up finished in %s.%n", formatDuration(System.nanoTime() - warmupStart));
 
             System.out.println("Benchmark started.");
-            BenchmarkRun run = executeBenchmark(connectionProvider, requestPlans);
+            BenchmarkRun run = executeBenchmark(config, connectionProvider, requestPlans);
             System.out.printf("Benchmark finished in %s.%n", formatDuration(run.benchmarkDurationNanos()));
             printSummary(config, run);
         }
@@ -235,7 +234,7 @@ public final class OpenLoopJdbcBenchmark {
                 statement.setString(4, CUSTOMER_STATUSES.get(random.nextInt(CUSTOMER_STATUSES.size())));
                 statement.setString(5, CUSTOMER_TIERS.get(random.nextInt(CUSTOMER_TIERS.size())));
                 statement.setString(6, REGIONS.get(random.nextInt(REGIONS.size())));
-                statement.setTimestamp(7, timestampDaysAgo(random.nextInt(900)));
+                statement.setTimestamp(7, timestampDaysAgo(config.baseInstant(), random.nextInt(900)));
                 statement.addBatch();
                 flushBatchIfNeeded(statement, (int) customerId, 500);
             }
@@ -257,7 +256,7 @@ public final class OpenLoopJdbcBenchmark {
                 statement.setString(4, PRODUCT_CATEGORIES.get(random.nextInt(PRODUCT_CATEGORIES.size())));
                 statement.setBigDecimal(5, priceForProduct(productId));
                 statement.setBoolean(6, random.nextInt(100) >= 3);
-                statement.setTimestamp(7, timestampDaysAgo(random.nextInt(730)));
+                statement.setTimestamp(7, timestampDaysAgo(config.baseInstant(), random.nextInt(730)));
                 statement.addBatch();
                 flushBatchIfNeeded(statement, (int) productId, 500);
             }
@@ -282,7 +281,7 @@ public final class OpenLoopJdbcBenchmark {
             int batchedOrders = 0;
             for (long orderId = 1; orderId <= config.orderCount(); orderId++) {
                 long customerId = 1 + random.nextInt(config.customerCount());
-                Timestamp orderedAt = timestampDaysAgo(random.nextInt(365));
+                Timestamp orderedAt = timestampDaysAgo(config.baseInstant(), random.nextInt(365));
                 int itemCount = 1 + random.nextInt(5);
                 BigDecimal orderTotal = BigDecimal.ZERO;
 
@@ -336,7 +335,7 @@ public final class OpenLoopJdbcBenchmark {
                 statement.setLong(1, eventId);
                 statement.setLong(2, customerId);
                 statement.setString(3, eventType);
-                statement.setTimestamp(4, timestampDaysAgo(random.nextInt(180)));
+                statement.setTimestamp(4, timestampDaysAgo(config.baseInstant(), random.nextInt(180)));
                 statement.setString(5, eventType + " event for customer " + customerId);
                 statement.addBatch();
                 flushBatchIfNeeded(statement, (int) eventId, 500);
@@ -425,7 +424,7 @@ public final class OpenLoopJdbcBenchmark {
         return result;
     }
 
-    private static BenchmarkRun executeBenchmark(ConnectionProvider connectionProvider, List<RequestPlan> plans) throws InterruptedException {
+    private static BenchmarkRun executeBenchmark(BenchmarkConfig config, ConnectionProvider connectionProvider, List<RequestPlan> plans) throws InterruptedException {
         RequestResult[] results = new RequestResult[plans.size()];
         LongAdder sqlStatementCount = new LongAdder();
         ConcurrentHashMap<String, LongAdder> errors = new ConcurrentHashMap<>();
@@ -446,7 +445,7 @@ public final class OpenLoopJdbcBenchmark {
                         updateMin(firstRequestStart, startedAt);
                         boolean success = false;
                         try {
-                            executeRequest(connectionProvider, plan, sqlStatementCount);
+                            executeRequest(config, connectionProvider, plan, sqlStatementCount);
                             success = true;
                         } catch (Exception exception) {
                             recordError(errors, exception);
@@ -476,14 +475,14 @@ public final class OpenLoopJdbcBenchmark {
         }
     }
 
-    private static void executeRequest(ConnectionProvider connectionProvider, RequestPlan plan, LongAdder sqlStatementCount) throws SQLException {
+    private static void executeRequest(BenchmarkConfig config, ConnectionProvider connectionProvider, RequestPlan plan, LongAdder sqlStatementCount) throws SQLException {
         switch (plan.type()) {
             case READ -> executeReadRequest(connectionProvider, plan, sqlStatementCount);
-            case CREATE -> executeCreateRequest(connectionProvider, plan, sqlStatementCount);
+            case CREATE -> executeCreateRequest(config, connectionProvider, plan, sqlStatementCount);
             case UPDATE -> executeUpdateRequest(connectionProvider, plan, sqlStatementCount);
             case DELETE -> executeDeleteRequest(connectionProvider, plan, sqlStatementCount);
-            case NORMAL_REPORT -> executeNormalReportRequest(connectionProvider, plan, sqlStatementCount);
-            case EXPENSIVE_REPORT -> executeExpensiveReportRequest(connectionProvider, plan, sqlStatementCount);
+            case NORMAL_REPORT -> executeNormalReportRequest(config, connectionProvider, plan, sqlStatementCount);
+            case EXPENSIVE_REPORT -> executeExpensiveReportRequest(config, connectionProvider, plan, sqlStatementCount);
         }
     }
 
@@ -503,7 +502,7 @@ public final class OpenLoopJdbcBenchmark {
         }
     }
 
-    private static void executeCreateRequest(ConnectionProvider connectionProvider, RequestPlan plan, LongAdder sqlStatementCount) throws SQLException {
+    private static void executeCreateRequest(BenchmarkConfig config, ConnectionProvider connectionProvider, RequestPlan plan, LongAdder sqlStatementCount) throws SQLException {
         String orderSql = """
                 INSERT INTO %s.orders (id, customer_id, order_status, ordered_at, total_amount)
                 VALUES (?, ?, ?, ?, ?)
@@ -519,7 +518,7 @@ public final class OpenLoopJdbcBenchmark {
 
         BigDecimal unitPrice = priceForProduct(plan.productId());
         BigDecimal lineTotal = scaleCurrency(unitPrice.multiply(BigDecimal.valueOf(plan.quantity())));
-        Timestamp now = Timestamp.from(Instant.now());
+        Timestamp now = Timestamp.from(config.baseInstant());
 
         try (Connection connection = connectionProvider.getConnection()) {
             connection.setAutoCommit(false);
@@ -586,8 +585,28 @@ public final class OpenLoopJdbcBenchmark {
         }
     }
 
-    private static void executeNormalReportRequest(ConnectionProvider connectionProvider, RequestPlan plan, LongAdder sqlStatementCount) throws SQLException {
-        String sql = switch (plan.reportVariant()) {
+    private static void executeNormalReportRequest(BenchmarkConfig config, ConnectionProvider connectionProvider, RequestPlan plan, LongAdder sqlStatementCount) throws SQLException {
+        String sql = normalReportSql(plan.reportVariant());
+
+        try (Connection connection = connectionProvider.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setTimestamp(1, timestampDaysAgo(config.baseInstant(), 90));
+            consumeQuery(statement, sqlStatementCount);
+        }
+    }
+
+    private static void executeExpensiveReportRequest(BenchmarkConfig config, ConnectionProvider connectionProvider, RequestPlan plan, LongAdder sqlStatementCount) throws SQLException {
+        String sql = expensiveReportSql(plan.reportVariant());
+
+        try (Connection connection = connectionProvider.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setTimestamp(1, timestampDaysAgo(config.baseInstant(), 365));
+            consumeQuery(statement, sqlStatementCount);
+        }
+    }
+
+    static String normalReportSql(int reportVariant) {
+        return switch (reportVariant) {
             case 0 -> """
                     SELECT c.region,
                            COUNT(DISTINCT o.id) AS order_count,
@@ -622,16 +641,10 @@ public final class OpenLoopJdbcBenchmark {
                     ORDER BY order_day DESC
                     """.formatted(SCHEMA_NAME);
         };
-
-        try (Connection connection = connectionProvider.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setTimestamp(1, timestampDaysAgo(90));
-            consumeQuery(statement, sqlStatementCount);
-        }
     }
 
-    private static void executeExpensiveReportRequest(ConnectionProvider connectionProvider, RequestPlan plan, LongAdder sqlStatementCount) throws SQLException {
-        String sql = switch (plan.reportVariant()) {
+    static String expensiveReportSql(int reportVariant) {
+        return switch (reportVariant) {
             // EXPENSIVE QUERY #1
             case 0 -> """
                     SELECT ranked.customer_id,
@@ -698,12 +711,6 @@ public final class OpenLoopJdbcBenchmark {
                     LIMIT 200
                     """.formatted(SCHEMA_NAME, SCHEMA_NAME, SCHEMA_NAME);
         };
-
-        try (Connection connection = connectionProvider.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setTimestamp(1, timestampDaysAgo(365));
-            consumeQuery(statement, sqlStatementCount);
-        }
     }
 
     private static void consumeQuery(PreparedStatement statement, LongAdder sqlStatementCount) throws SQLException {
@@ -810,8 +817,8 @@ public final class OpenLoopJdbcBenchmark {
         return String.format(Locale.US, "%.3f ms", nanos / 1_000_000.0);
     }
 
-    private static Timestamp timestampDaysAgo(int daysAgo) {
-        return Timestamp.from(BASE_INSTANT.minus(Duration.ofDays(daysAgo)));
+    private static Timestamp timestampDaysAgo(Instant baseInstant, int daysAgo) {
+        return Timestamp.from(baseInstant.minus(Duration.ofDays(daysAgo)));
     }
 
     private static BigDecimal priceForProduct(long productId) {
@@ -938,7 +945,8 @@ public final class OpenLoopJdbcBenchmark {
             int customerCount,
             int productCount,
             int orderCount,
-            int eventCount
+            int eventCount,
+            Instant baseInstant
     ) {
         private static BenchmarkConfig fromEnvironment() {
             boolean useOjp = boolProperty("benchmark.useOjp", false);
@@ -960,7 +968,8 @@ public final class OpenLoopJdbcBenchmark {
                     customerCount,
                     productCount,
                     orderCount,
-                    eventCount
+                    eventCount,
+                    Instant.now()
             );
 
             if (config.requestCount() <= 0 || config.customerCount() <= 0 || config.productCount() <= 0
