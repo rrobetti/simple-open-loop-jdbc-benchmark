@@ -30,6 +30,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.concurrent.atomic.AtomicLong;
 
 public final class OpenLoopJdbcBenchmark {
 
@@ -352,6 +353,14 @@ public final class OpenLoopJdbcBenchmark {
 
     private static List<RequestPlan> buildRequestPlans(BenchmarkConfig config, DatasetStats datasetStats) {
         EnumMap<RequestType, Integer> counts = calculateRequestCounts(config.requestCount());
+        int deleteRequests = counts.getOrDefault(RequestType.DELETE, 0);
+        if (deleteRequests > datasetStats.maxEventId()) {
+            throw new IllegalArgumentException(
+                    "Configured workload produces %d DELETE requests but only %d seeded events exist. "
+                            .formatted(deleteRequests, datasetStats.maxEventId())
+                            + "Increase benchmark.dataset.events or lower benchmark.requestCount."
+            );
+        }
         List<RequestPlan> plans = new ArrayList<>(config.requestCount());
         Random random = new Random(WORKLOAD_RANDOM_SEED);
         long nextCreateOrderId = datasetStats.maxOrderId() + 1L;
@@ -420,6 +429,8 @@ public final class OpenLoopJdbcBenchmark {
         RequestResult[] results = new RequestResult[plans.size()];
         LongAdder sqlStatementCount = new LongAdder();
         ConcurrentHashMap<String, LongAdder> errors = new ConcurrentHashMap<>();
+        AtomicLong firstRequestStart = new AtomicLong(Long.MAX_VALUE);
+        AtomicLong lastRequestFinish = new AtomicLong(Long.MIN_VALUE);
 
         CountDownLatch startGate = new CountDownLatch(1);
         CountDownLatch doneGate = new CountDownLatch(plans.size());
@@ -432,6 +443,7 @@ public final class OpenLoopJdbcBenchmark {
                     try {
                         startGate.await();
                         long startedAt = System.nanoTime();
+                        updateMin(firstRequestStart, startedAt);
                         boolean success = false;
                         try {
                             executeRequest(connectionProvider, plan, sqlStatementCount);
@@ -439,7 +451,9 @@ public final class OpenLoopJdbcBenchmark {
                         } catch (Exception exception) {
                             recordError(errors, exception);
                         } finally {
-                            results[arrayIndex] = new RequestResult(plan.type(), success, System.nanoTime() - startedAt);
+                            long finishedAt = System.nanoTime();
+                            updateMax(lastRequestFinish, finishedAt);
+                            results[arrayIndex] = new RequestResult(plan.type(), success, finishedAt - startedAt);
                         }
                     } catch (InterruptedException interruptedException) {
                         Thread.currentThread().interrupt();
@@ -451,10 +465,13 @@ public final class OpenLoopJdbcBenchmark {
                 });
             }
 
-            long benchmarkStart = System.nanoTime();
             startGate.countDown();
             doneGate.await();
-            long benchmarkDuration = System.nanoTime() - benchmarkStart;
+            long earliestStart = firstRequestStart.get();
+            long latestFinish = lastRequestFinish.get();
+            long benchmarkDuration = (earliestStart == Long.MAX_VALUE || latestFinish == Long.MIN_VALUE)
+                    ? 0L
+                    : Math.max(0L, latestFinish - earliestStart);
             return new BenchmarkRun(results, benchmarkDuration, sqlStatementCount.sum(), errors);
         }
     }
@@ -562,7 +579,10 @@ public final class OpenLoopJdbcBenchmark {
         try (Connection connection = connectionProvider.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, plan.deleteEventId());
-            executeUpdate(statement, sqlStatementCount);
+            int rowsDeleted = executeUpdate(statement, sqlStatementCount);
+            if (rowsDeleted == 0) {
+                throw new SQLException("Delete request removed no rows for event " + plan.deleteEventId());
+            }
         }
     }
 
@@ -695,9 +715,9 @@ public final class OpenLoopJdbcBenchmark {
         }
     }
 
-    private static void executeUpdate(PreparedStatement statement, LongAdder sqlStatementCount) throws SQLException {
+    private static int executeUpdate(PreparedStatement statement, LongAdder sqlStatementCount) throws SQLException {
         sqlStatementCount.increment();
-        statement.executeUpdate();
+        return statement.executeUpdate();
     }
 
     private static void recordError(ConcurrentHashMap<String, LongAdder> errors, Exception exception) {
@@ -801,6 +821,20 @@ public final class OpenLoopJdbcBenchmark {
 
     private static BigDecimal scaleCurrency(BigDecimal value) {
         return value.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static void updateMin(AtomicLong target, long value) {
+        long current = target.get();
+        while (value < current && !target.compareAndSet(current, value)) {
+            current = target.get();
+        }
+    }
+
+    private static void updateMax(AtomicLong target, long value) {
+        long current = target.get();
+        while (value > current && !target.compareAndSet(current, value)) {
+            current = target.get();
+        }
     }
 
     private interface ConnectionProvider extends AutoCloseable {
@@ -1142,11 +1176,11 @@ public final class OpenLoopJdbcBenchmark {
         if (values.length == 0) {
             return -1L;
         }
-        long total = 0L;
+        double total = 0.0;
         for (long value : values) {
             total += value;
         }
-        return total / values.length;
+        return Math.round(total / values.length);
     }
 
     private static long percentile(long[] values, int percentile) {

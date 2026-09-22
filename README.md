@@ -65,6 +65,7 @@ mvn \
 ## Notes
 
 - The benchmark recreates its schema and populates realistic seed data before each run.
+- The benchmark drops and recreates the `open_loop_benchmark` schema on every run, so use a dedicated PostgreSQL database and do not point it at shared data you need to keep.
 - Setup and warm-up are excluded from measured benchmark time.
 - The workload mix is controlled by constants in `OpenLoopJdbcBenchmark`.
 - Run `mvn exec:java -Dexec.args=--help` to print available system properties.
