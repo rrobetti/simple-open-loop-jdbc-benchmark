@@ -398,7 +398,7 @@ public final class OpenLoopJdbcBenchmark {
         return plans;
     }
 
-    private static EnumMap<RequestType, Integer> calculateRequestCounts(int requestCount) {
+    static EnumMap<RequestType, Integer> calculateRequestCounts(int requestCount) {
         List<Allocation> allocations = new ArrayList<>();
         allocations.add(new Allocation(RequestType.READ, requestCount * READ_PERCENT / 100.0));
         allocations.add(new Allocation(RequestType.CREATE, requestCount * CREATE_PERCENT / 100.0));
@@ -1035,7 +1035,7 @@ public final class OpenLoopJdbcBenchmark {
         }
     }
 
-    private enum RequestType {
+    enum RequestType {
         READ("READ"),
         CREATE("CREATE"),
         UPDATE("UPDATE"),

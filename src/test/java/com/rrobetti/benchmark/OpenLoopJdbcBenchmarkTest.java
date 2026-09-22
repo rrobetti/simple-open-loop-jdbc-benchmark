@@ -2,6 +2,8 @@ package com.rrobetti.benchmark;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.EnumMap;
+
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -37,6 +39,22 @@ class OpenLoopJdbcBenchmarkTest {
                 () -> assertTrue(variant2.contains("running_category_revenue")),
                 () -> assertEquals(variant2, variant99),
                 () -> assertEquals(3, java.util.Set.of(variant0, variant1, variant2).size())
+        );
+    }
+
+    @Test
+    void requestCountAllocationPreservesTotalAndRemainders() {
+        EnumMap<OpenLoopJdbcBenchmark.RequestType, Integer> counts =
+                OpenLoopJdbcBenchmark.calculateRequestCounts(7);
+
+        assertAll(
+                () -> assertEquals(7, counts.values().stream().mapToInt(Integer::intValue).sum()),
+                () -> assertEquals(3, counts.get(OpenLoopJdbcBenchmark.RequestType.READ)),
+                () -> assertEquals(1, counts.get(OpenLoopJdbcBenchmark.RequestType.CREATE)),
+                () -> assertEquals(1, counts.get(OpenLoopJdbcBenchmark.RequestType.UPDATE)),
+                () -> assertEquals(0, counts.get(OpenLoopJdbcBenchmark.RequestType.DELETE)),
+                () -> assertEquals(2, counts.get(OpenLoopJdbcBenchmark.RequestType.NORMAL_REPORT)),
+                () -> assertEquals(0, counts.get(OpenLoopJdbcBenchmark.RequestType.EXPENSIVE_REPORT))
         );
     }
 }
