@@ -69,6 +69,7 @@ export BENCHMARK_DB_PASSWORD=<db-password>
 mvn \
   -Dbenchmark.useOjp=false \
   -Dbenchmark.requestCount=1000 \
+  -Dbenchmark.interSubmissionWaitMillis=5 \
   -Dbenchmark.db.host=localhost \
   -Dbenchmark.db.port=5432 \
   -Dbenchmark.db.name=benchmark \
@@ -81,6 +82,8 @@ mvn \
 This mode uses the Open J Proxy JDBC driver directly with no client-side pool. It assumes the OJP server is available on `localhost:1059`.
 
 The benchmark also ships an `ojp.properties` file that asks OJP to keep its server-managed datasource pool at `minimumIdle=20` and `maximumPoolSize=20`. The idea is to simulate a microservice pattern where, for example, 5 application instances with a local max pool of 20 could otherwise open 100 direct database connections, while OJP can keep the real database connection count pinned to a smaller controlled target.
+
+Request submissions are also paced by default with a `5 ms` gap between scheduled starts. You can override that with `-Dbenchmark.interSubmissionWaitMillis=...` (or `BENCHMARK_INTER_SUBMISSION_WAIT_MILLIS`) if you want a tighter or looser open-loop arrival pattern.
 
 If you want to run OJP in Docker with slow query segregation enabled, the upstream OJP docs require mounting the JDBC driver jars into the container first:
 
@@ -107,6 +110,7 @@ export BENCHMARK_DB_PASSWORD=<db-password>
 mvn \
   -Dbenchmark.useOjp=true \
   -Dbenchmark.requestCount=1000 \
+  -Dbenchmark.interSubmissionWaitMillis=5 \
   -Dbenchmark.db.host=localhost \
   -Dbenchmark.db.port=5432 \
   -Dbenchmark.db.name=benchmark \

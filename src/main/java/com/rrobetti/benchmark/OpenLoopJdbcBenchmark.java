@@ -31,6 +31,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
 
 public final class OpenLoopJdbcBenchmark {
 
@@ -106,6 +107,7 @@ public final class OpenLoopJdbcBenchmark {
                   export BENCHMARK_DB_PASSWORD=<db-password>
                   -Dbenchmark.useOjp=false|true
                   -Dbenchmark.requestCount=1000
+                  -Dbenchmark.interSubmissionWaitMillis=5
                   -Dbenchmark.db.host=localhost
                   -Dbenchmark.db.port=5432
                   -Dbenchmark.db.name=benchmark
@@ -433,14 +435,17 @@ public final class OpenLoopJdbcBenchmark {
 
         CountDownLatch startGate = new CountDownLatch(1);
         CountDownLatch doneGate = new CountDownLatch(plans.size());
+        AtomicLong submissionBaseNanos = new AtomicLong(Long.MIN_VALUE);
 
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             for (int requestIndex = 0; requestIndex < plans.size(); requestIndex++) {
                 final int arrayIndex = requestIndex;
+                final int submissionIndex = requestIndex;
                 final RequestPlan plan = plans.get(requestIndex);
                 executor.submit(() -> {
                     try {
                         startGate.await();
+                        waitForSubmissionSlot(submissionBaseNanos.get(), config.interSubmissionWaitMillis(), submissionIndex);
                         long startedAt = System.nanoTime();
                         updateMin(firstRequestStart, startedAt);
                         boolean success = false;
@@ -464,6 +469,7 @@ public final class OpenLoopJdbcBenchmark {
                 });
             }
 
+            submissionBaseNanos.set(System.nanoTime());
             startGate.countDown();
             doneGate.await();
             long earliestStart = firstRequestStart.get();
@@ -749,6 +755,22 @@ public final class OpenLoopJdbcBenchmark {
         );
     }
 
+    static void waitForSubmissionSlot(long submissionBaseNanos, long interSubmissionWaitMillis, int submissionIndex) {
+        long targetNanos = scheduledSubmissionTimeNanos(submissionBaseNanos, interSubmissionWaitMillis, submissionIndex);
+        long remainingNanos = targetNanos - System.nanoTime();
+        while (remainingNanos > 0L) {
+            LockSupport.parkNanos(remainingNanos);
+            if (Thread.currentThread().isInterrupted()) {
+                return;
+            }
+            remainingNanos = targetNanos - System.nanoTime();
+        }
+    }
+
+    static long scheduledSubmissionTimeNanos(long submissionBaseNanos, long interSubmissionWaitMillis, int submissionIndex) {
+        return submissionBaseNanos + (submissionIndex * interSubmissionWaitMillis * 1_000_000L);
+    }
+
     private static void printSummary(BenchmarkConfig config, BenchmarkRun run) {
         Summary summary = Summary.from(run);
 
@@ -955,6 +977,7 @@ public final class OpenLoopJdbcBenchmark {
             String dbPassword,
             String ojpHost,
             int ojpPort,
+            long interSubmissionWaitMillis,
             int customerCount,
             int productCount,
             int orderCount,
@@ -964,6 +987,7 @@ public final class OpenLoopJdbcBenchmark {
         private static BenchmarkConfig fromEnvironment() {
             boolean useOjp = boolProperty("benchmark.useOjp", false);
             int requestCount = intProperty("benchmark.requestCount", 1_000);
+            long interSubmissionWaitMillis = longProperty("benchmark.interSubmissionWaitMillis", env("BENCHMARK_INTER_SUBMISSION_WAIT_MILLIS", "5"));
             int customerCount = intProperty("benchmark.dataset.customers", 5_000);
             int productCount = intProperty("benchmark.dataset.products", 1_000);
             int orderCount = intProperty("benchmark.dataset.orders", 25_000);
@@ -978,6 +1002,7 @@ public final class OpenLoopJdbcBenchmark {
                     stringProperty("benchmark.db.password", "BENCHMARK_DB_PASSWORD", "postgres"),
                     stringProperty("benchmark.ojp.host", "BENCHMARK_OJP_HOST", "localhost"),
                     intProperty("benchmark.ojp.port", env("BENCHMARK_OJP_PORT", "1059")),
+                    interSubmissionWaitMillis,
                     customerCount,
                     productCount,
                     orderCount,
@@ -988,6 +1013,9 @@ public final class OpenLoopJdbcBenchmark {
             if (config.requestCount() <= 0 || config.customerCount() <= 0 || config.productCount() <= 0
                     || config.orderCount() <= 0 || config.eventCount() <= 0) {
                 throw new IllegalArgumentException("Request and dataset sizes must be positive.");
+            }
+            if (config.interSubmissionWaitMillis() < 0L) {
+                throw new IllegalArgumentException("benchmark.interSubmissionWaitMillis must be zero or positive.");
             }
             return config;
         }
@@ -1014,6 +1042,10 @@ public final class OpenLoopJdbcBenchmark {
 
         private static int intProperty(String property, String defaultValue) {
             return Integer.parseInt(System.getProperty(property, defaultValue));
+        }
+
+        private static long longProperty(String property, String defaultValue) {
+            return Long.parseLong(System.getProperty(property, defaultValue));
         }
 
         private static String stringProperty(String systemProperty, String envVariable, String defaultValue) {

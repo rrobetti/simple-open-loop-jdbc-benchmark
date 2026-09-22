@@ -112,4 +112,18 @@ class OpenLoopJdbcBenchmarkTest {
                 () -> assertEquals("20", properties.getProperty("ojp.connection.pool.minimumIdle"))
         );
     }
+
+    @Test
+    void scheduledSubmissionTimeUsesConfiguredWaitMillis() {
+        long baseNanos = 1_000_000_000L;
+
+        assertAll(
+                () -> assertEquals(baseNanos,
+                        OpenLoopJdbcBenchmark.scheduledSubmissionTimeNanos(baseNanos, 5L, 0)),
+                () -> assertEquals(baseNanos + 5_000_000L,
+                        OpenLoopJdbcBenchmark.scheduledSubmissionTimeNanos(baseNanos, 5L, 1)),
+                () -> assertEquals(baseNanos + 20_000_000L,
+                        OpenLoopJdbcBenchmark.scheduledSubmissionTimeNanos(baseNanos, 5L, 4))
+        );
+    }
 }
