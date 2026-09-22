@@ -55,12 +55,15 @@ The simplest local setup is to let the container create the benchmark database f
 
 ```bash
 docker run --name benchmark-postgres \
+  --shm-size=1g \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=benchmark \
   -p 5432:5432 \
   -d postgres:17
 ```
+
+The extra shared memory is recommended for this benchmark’s concurrent reporting workload. If you still hit PostgreSQL shared-memory errors under heavier runs, increase `--shm-size` further.
 
 Wait for PostgreSQL to become ready:
 
