@@ -31,6 +31,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 
 public final class OpenLoopJdbcBenchmark {
@@ -490,7 +491,7 @@ public final class OpenLoopJdbcBenchmark {
     private static BenchmarkRun executeBenchmark(BenchmarkConfig config, ConnectionProvider connectionProvider, List<RequestPlan> plans) throws InterruptedException {
         RequestResult[] results = new RequestResult[plans.size()];
         LongAdder sqlStatementCount = new LongAdder();
-        ConcurrentHashMap<String, LongAdder> errors = new ConcurrentHashMap<>();
+        ConcurrentHashMap<String, ErrorSummary> errors = new ConcurrentHashMap<>();
         AtomicLong firstRequestStart = new AtomicLong(Long.MAX_VALUE);
         AtomicLong lastRequestFinish = new AtomicLong(Long.MIN_VALUE);
 
@@ -787,7 +788,7 @@ public final class OpenLoopJdbcBenchmark {
         return statement.executeUpdate();
     }
 
-    private static void recordError(ConcurrentHashMap<String, LongAdder> errors, Exception exception) {
+    private static void recordError(ConcurrentHashMap<String, ErrorSummary> errors, Exception exception) {
         incrementErrorCount(errors, exception);
     }
 
@@ -795,8 +796,13 @@ public final class OpenLoopJdbcBenchmark {
         return exception.getClass().getSimpleName();
     }
 
-    static void incrementErrorCount(ConcurrentHashMap<String, LongAdder> errors, Exception exception) {
-        errors.computeIfAbsent(errorTypeKey(exception), ignored -> new LongAdder()).increment();
+    static void incrementErrorCount(ConcurrentHashMap<String, ErrorSummary> errors, Exception exception) {
+        errors.computeIfAbsent(errorTypeKey(exception), ignored -> new ErrorSummary()).record(exception);
+    }
+
+    static String sampleErrorMessage(Exception exception) {
+        String message = exception.getMessage();
+        return message == null || message.isBlank() ? "<no message>" : message;
     }
 
     static String buildOjpJdbcUrl(String ojpHost, int ojpPort, String dbHost, int dbPort, String dbName) {
@@ -868,7 +874,12 @@ public final class OpenLoopJdbcBenchmark {
             System.out.println("Exception counts:");
             run.errors().entrySet().stream()
                     .sorted(Map.Entry.comparingByKey())
-                    .forEach(entry -> System.out.printf("  %s -> %d%n", entry.getKey(), entry.getValue().sum()));
+                    .forEach(entry -> System.out.printf(
+                            "  %s -> %d (sample: %s)%n",
+                            entry.getKey(),
+                            entry.getValue().count(),
+                            entry.getValue().sampleMessage()
+                    ));
         }
         System.out.println("=======================================");
     }
@@ -1173,8 +1184,26 @@ public final class OpenLoopJdbcBenchmark {
             RequestResult[] results,
             long benchmarkDurationNanos,
             long sqlStatementCount,
-            ConcurrentHashMap<String, LongAdder> errors
+            ConcurrentHashMap<String, ErrorSummary> errors
     ) {
+    }
+
+    static final class ErrorSummary {
+        private final LongAdder count = new LongAdder();
+        private final AtomicReference<String> sampleMessage = new AtomicReference<>();
+
+        private void record(Exception exception) {
+            count.increment();
+            sampleMessage.compareAndSet(null, sampleErrorMessage(exception));
+        }
+
+        long count() {
+            return count.sum();
+        }
+
+        String sampleMessage() {
+            return sampleMessage.get();
+        }
     }
 
     private record Summary(

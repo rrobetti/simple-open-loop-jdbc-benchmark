@@ -8,7 +8,6 @@ import java.sql.SQLException;
 import java.util.EnumMap;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.LongAdder;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -79,7 +78,7 @@ class OpenLoopJdbcBenchmarkTest {
 
     @Test
     void errorCountsAggregateByExceptionTypeNotMessage() {
-        ConcurrentHashMap<String, LongAdder> errors = new ConcurrentHashMap<>();
+        ConcurrentHashMap<String, OpenLoopJdbcBenchmark.ErrorSummary> errors = new ConcurrentHashMap<>();
 
         OpenLoopJdbcBenchmark.incrementErrorCount(errors, new SQLException("first message"));
         OpenLoopJdbcBenchmark.incrementErrorCount(errors, new SQLException("different message"));
@@ -87,8 +86,18 @@ class OpenLoopJdbcBenchmarkTest {
 
         assertAll(
                 () -> assertEquals(2, errors.size()),
-                () -> assertEquals(2L, errors.get("SQLException").sum()),
-                () -> assertEquals(1L, errors.get("IllegalStateException").sum())
+                () -> assertEquals(2L, errors.get("SQLException").count()),
+                () -> assertEquals("first message", errors.get("SQLException").sampleMessage()),
+                () -> assertEquals(1L, errors.get("IllegalStateException").count()),
+                () -> assertEquals("boom", errors.get("IllegalStateException").sampleMessage())
+        );
+    }
+
+    @Test
+    void sampleErrorMessageUsesFallbackForBlankMessages() {
+        assertAll(
+                () -> assertEquals("<no message>", OpenLoopJdbcBenchmark.sampleErrorMessage(new SQLException())),
+                () -> assertEquals("<no message>", OpenLoopJdbcBenchmark.sampleErrorMessage(new SQLException("   ")))
         );
     }
 
